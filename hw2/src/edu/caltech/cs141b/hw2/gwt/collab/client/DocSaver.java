@@ -19,6 +19,7 @@ public class DocSaver implements AsyncCallback<UnlockedDocument> {
 		collaborator.statusUpdate("Attemping to save document.");
 		collaborator.waitingKey = lockedDoc.getKey();
 		collaborator.collabService.saveDocument(lockedDoc, this);
+		collaborator.tabs.removeTab(collaborator.tabIndex);
 		collaborator.saveButton.setEnabled(false);
 		collaborator.title.setEnabled(false);
 		collaborator.contents.setEnabled(false);

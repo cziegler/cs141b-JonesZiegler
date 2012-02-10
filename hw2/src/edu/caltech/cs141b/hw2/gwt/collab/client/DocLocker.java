@@ -61,6 +61,9 @@ public class DocLocker implements AsyncCallback<LockedDocument> {
 		collaborator.lockedDoc = result;
 		collaborator.title.setValue(result.getTitle());
 		collaborator.title.setEnabled(true);
+		collaborator.tabs.addTab(result.getTitle());
+		collaborator.tabs.selectTab(collaborator.tabs.getTabCount()-1);
+		collaborator.tabIndex = collaborator.tabs.getSelectedTab();
 		collaborator.contents.setHTML(result.getContents());
 		collaborator.contents.setEnabled(true);
 		collaborator.refreshDoc.setEnabled(false);
