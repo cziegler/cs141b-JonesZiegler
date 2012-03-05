@@ -1,9 +1,19 @@
 package edu.caltech.cs141b.hw2.gwt.collab.server;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.logging.Logger; 
 import java.util.Date;
-import java.util.LinkedList;
+import java.util.logging.Logger;
+import javax.jdo.annotations.Persistent;
+import com.google.appengine.api.datastore.DatastoreService;
+import com.google.appengine.api.datastore.DatastoreServiceFactory;
+import com.google.appengine.api.datastore.Entity;
+import com.google.appengine.api.datastore.EntityNotFoundException;
+import com.google.appengine.api.datastore.Key;
+import com.google.appengine.api.datastore.KeyFactory;
+import com.google.appengine.api.datastore.Transaction;
+
+
 
 import edu.caltech.cs141b.hw2.gwt.collab.client.CollaboratorService;
 import edu.caltech.cs141b.hw2.gwt.collab.shared.DocumentMetadata;
@@ -12,9 +22,8 @@ import edu.caltech.cs141b.hw2.gwt.collab.shared.LockUnavailable;
 import edu.caltech.cs141b.hw2.gwt.collab.shared.LockedDocument;
 import edu.caltech.cs141b.hw2.gwt.collab.shared.UnlockedDocument;
 
+
 import com.google.gwt.user.server.rpc.RemoteServiceServlet;
-import javax.jdo.annotations.PersistenceCapable;
-import javax.jdo.annotations.Persistent;
 
 /**
  * The server side implementation of the RPC service.
@@ -22,24 +31,20 @@ import javax.jdo.annotations.Persistent;
 @SuppressWarnings("serial")
 public class CollaboratorServiceImpl extends RemoteServiceServlet implements
 		CollaboratorService {
-
-	private static final Logger log = Logger.getLogger(CollaboratorServiceImpl.class.toString()); 
 	@Persistent
-	public List<DocumentMetadata> metadataList = new LinkedList<DocumentMetadata>(); // List of metadata
-	
-	@Persistent
-	public List<LockedDocument> lockedList = new LinkedList<LockedDocument>(); // List of Locked Documents
-	
-	@Persistent
-	public List<UnlockedDocument> unlockedList = new LinkedList<UnlockedDocument>(); // List of Unlocked Documents
-	
-	@Persistent 
-	public static int lockCount = 0; // Use this to identify locked items. It is incremented with each use so each ID is (within reason) unique.
+	public List<DocumentMetadata> metadataList = new ArrayList<DocumentMetadata>(); // List of metadata
+	private static final Logger log = Logger.getLogger(CollaboratorServiceImpl.class.toString());
+	DatastoreService datastore = DatastoreServiceFactory.getDatastoreService(); // Stores all documents
+											/* Documents will be stored as Entities with properties:
+											 * Date, Title, Contents, LockedBy representing respectively 
+											 * Time Until Unlocked, Title, Contents, and ID of the locking client*/
 
-
+	@Persistent
+	public int count=0; //This is used to assign a unique ID to each instance of a lock
+	
 	/* This function returns the list of metadata 
 	 * Arguments: None
-	 * Return: LinkedList<DocumentMetadata>*/
+	 * Return: ArrayList<DocumentMetadata>*/
 	@Override
 	public List<DocumentMetadata> getDocumentList() {
 		return metadataList;
@@ -49,50 +54,63 @@ public class CollaboratorServiceImpl extends RemoteServiceServlet implements
 	/* This function takes a key and locks a document if the document is available
 	 * Arguments: String (serves as a key) 
 	 * Returns: LockedDocument */
-	@Override 
+	@SuppressWarnings("deprecation") // Because the operations to set the time on the Date class are deprecated
+	@Override
 	public LockedDocument lockDocument(String documentKey)
 			throws LockUnavailable {
-		UnlockedDocument current; // Used to iterate
-		Date curDate; // Used for the lockedUntil
-		LockedDocument newItem = null; // Return value
-		/* This loop checks the unlocked documents for the matching key */
-		for (int i=0; i<unlockedList.size(); i++){
-			current = unlockedList.get(i);
-			if (current.getKey().equals(documentKey)){
-				/* Need to put ID in first coordinate */
-				curDate = new Date();
-				curDate.setMinutes(curDate.getMinutes()+10);
-				/* We create the new LockedDocument */
-				newItem = new LockedDocument(Integer.toString(lockCount), curDate, current.getKey(), current.getTitle(), current.getContents());
-				lockCount++; /* Value is incremented to maintain uniqueness */
-				unlockedList.remove(i);
-				lockedList.add(0, newItem);
-				break;
+		Key docKey = KeyFactory.stringToKey(documentKey);
+		Transaction txn = datastore.beginTransaction(); //Implemented as a transaction for concurrency
+		try{
+		Entity document = datastore.get(docKey);
+		Date currentTime = new Date(); // Sets current time
+		Date lockedTime = (Date) document.getProperty("Date"); // Gets the time stored in the lock
+		if ((lockedTime==null) || lockedTime.before(new Date())){
+			// getting here means the document is unlocked or has expired lock
+			currentTime.setMinutes(currentTime.getMinutes()+10);
+			document.setProperty("Date", currentTime); // Sets the time for the new lock 10 minutes in the future 
+			count++; // Gets a new process ID
+			document.setProperty("LockedBy", Integer.toString(count));
+			String title = (String) document.getProperty("Title");
+			String contents = (String) document.getProperty("Contents");
+			// Creates a new document with the above values.
+			LockedDocument newLock = new LockedDocument(Integer.toString(count), currentTime, documentKey, title, contents);
+			datastore.put(txn,document); // stores the Entity back in the datastore with updated values
+			txn.commit(); // ends the transaction
+			return newLock;						
+			} else {
+				throw new LockUnavailable("Document currently locked");
+			}
+		} catch (EntityNotFoundException e) {
+			/* This should never occur as it would require picking a nonexistent key out of the list */
+			throw new LockUnavailable("Key not found");
+		} finally{
+			if (txn.isActive()){
+				txn.rollback();
 			}
 		}
-		if (newItem == null){
-		throw new LockUnavailable("Item not found");
-		}
-		return newItem;
 	}
+
 
 	/* This function takes a document key and returns the document (if found) in read only 
 	 * Arguments: String
 	 * Returns: UnlockedDocument */
 	@Override
 	public UnlockedDocument getDocument(String documentKey) {
-		UnlockedDocument current = null; // Iterates through list
-		UnlockedDocument newItem = null; // Return variable
-		/* Iterates through unlocked list checking if keys match */
-		for (int i=0; i<unlockedList.size(); i++){
-			current = unlockedList.get(i);
-			if (documentKey.equals(current.getKey())){
-				//newItem = new UnlockedDocument(current.getKey(), current.getTitle(), current.getContents());
-				break;
+		
+		if (isKeyPresent(documentKey)){ // Checks if the key is present in the datastore. This prevents the caught error from ever occurring.
+			try{
+			Key docKey = KeyFactory.stringToKey(documentKey); 
+			Entity document = datastore.get(docKey);
+			UnlockedDocument newDoc = new UnlockedDocument(documentKey, (String) document.getProperty("Title"), (String) document.getProperty("Contents"));
+			return newDoc;
+			}catch(EntityNotFoundException e){
+				// This should never occur
 			}
 		}
-		return current;
+		return new UnlockedDocument();
+		
 	}
+
 
 	/* This function takes a LockedDocument and if the key and lockedBy ID matches that of the document in 
 	 * the list, unlocks the document and puts it in the unlocked list. If no key matches the LockedDocuments'
@@ -102,74 +120,112 @@ public class CollaboratorServiceImpl extends RemoteServiceServlet implements
 	@Override
 	public UnlockedDocument saveDocument(LockedDocument doc)
 			throws LockExpired {
-		LockedDocument currentLocked; // Iterates through list of LockedDocuments
-		UnlockedDocument currentUnlocked; // Iterates through list of UnlockedDocuments
-		UnlockedDocument newItem = null; // Return variable
-		String lockId = doc.getLockedBy(); // lockedBy identifier
-		boolean notInList = true; // This remains true only if the key is new
-
-		/* This loop searches the list of UnlockedDocuments for the key. If the key is found, then we know the
-		 * lock has expired. */
-		for (int i=0; i < unlockedList.size(); i++){
-			currentUnlocked = unlockedList.get(i);				
-			if (currentUnlocked.getKey().equals(doc.getKey())){
-				throw new LockExpired("Document is unlocked");
+		// Defining the parameters of the document
+		String title = doc.getTitle(); 
+		String contents = doc.getContents();
+		String lockedBy = doc.getLockedBy();
+		Date lockedUntil = doc.getLockedUntil();
+		Transaction txn = datastore.beginTransaction();
+		if(isKeyPresent(doc.getKey())){ // This prevents the caught error from ever occurring.
+			Key docKey = KeyFactory.stringToKey(doc.getKey());
+			try{
+				Entity document = datastore.get(docKey);
+				if ((document.getProperty("LockedBy").equals(lockedBy))&&(isValid(lockedUntil)) ){
+					// Getting here means there is a document with the same key in the datastore and the lock matches up
+					// Setting the properties in the datastore
+					document.setProperty("Contents", contents);
+					if(!(document.getProperty("Title").equals(title))){ // This updates the list of metadata if the titles are different
+						metaUpdate(doc.getKey(),title);
+					}
+					document.setProperty("Title", title);
+					document.setProperty("Date", null);
+					document.setProperty("LockedBy", null);
+					datastore.put(txn, document);
+					txn.commit();
+					}else{
+						throw new LockExpired("Lock Expired");
+						}
+			}catch(EntityNotFoundException e) {
+				// This should never occur
+			}finally{
+				if (txn.isActive()){
+					txn.rollback();
 				}
 			}
-		/* Since the key was not in UnlockedDocuments, we know it is either new or currently locked */
-		newItem = new UnlockedDocument(doc.getKey(), doc.getTitle(), doc.getContents());
-		/* This loop searches the list of LockedDocuments for the key and checks the lockedBy ID. If the ID
-		 * matches, then we unlock the document. If the ID doesn't match, then the lock has expired. If the
-		 * ID is not found, then the key is new */
-		for (int i=0; i<lockedList.size(); i++){
-			currentLocked = lockedList.get(i);
-			if (currentLocked.getKey().equals(doc.getKey())){
-				if (!currentLocked.getLockedBy().equals(lockId)){
-					throw new LockExpired("Invalid Lock ID");
-				}
-				lockedList.remove(i);
-				unlockedList.add(0, newItem);
-				notInList = false;
-				break;
-			}
+		} else {
+			// Getting here means there is no key matching the document in the list ie new document
+			// Setting properties in the datastore
+			Entity newDoc = new Entity("Document");
+			newDoc.setProperty("Title", title);
+			newDoc.setProperty("Contents", contents);
+			newDoc.setProperty("Date", null);
+			newDoc.setProperty("LockedBy", null);
+			Key keys = datastore.put(txn, newDoc);
+			txn.commit();
+			// Updating list of metadata
+			DocumentMetadata meta= new DocumentMetadata(KeyFactory.keyToString(keys), title);
+			metadataList.add(meta);
+			return new UnlockedDocument(KeyFactory.keyToString(keys), title, contents);
 		}
-		/* If notInList is true, then we have a new key and must add to the metadata list */
-		if (notInList){
-			DocumentMetadata newMetadata = new DocumentMetadata(doc.getKey(), doc.getTitle());
-			unlockedList.add(0, newItem);
-			metadataList.add(0, newMetadata);
-		}
-		return newItem;
+		
+		
+		return new UnlockedDocument(doc.getKey(), title, contents);
 	}
 
+
 	/* This function takes a LockedDocument, checks that it is still locked with the same id
-	 * and if so, returns it to the list of UnlockedDocuments */
+	 * and if so, returns it to the list of UnlockedDocuments */	
 	@Override
 	public void releaseLock(LockedDocument doc) throws LockExpired {
-		LockedDocument currentLocked; // Iterates through the list
-		boolean notInList = true; // Remains true only if the key is not found
-		UnlockedDocument newItem; // Stores new UnlockedDocument
-		String lockId = doc.getLockedBy(); // value in lockedBy field
-		/* This loop looks through the list of LockedDocuments and checks if the key and ID 
-		 * match. If so, we unlock the document without changing contents */
-		for (int i=0; i<lockedList.size(); i++){
-			currentLocked = lockedList.get(i);
-			if (currentLocked.getKey().equals(doc.getKey())){
-				if (!currentLocked.getLockedBy().equals(lockId)){
-					throw new LockExpired("Invalid Lock ID");
-				}
-				newItem = currentLocked.unlock();
-				lockedList.remove(i);
-				unlockedList.add(0, newItem);
-				notInList = false;
-				break;
+		String lockedBy = doc.getLockedBy();
+		Date lockedUntil = doc.getLockedUntil();
+		Transaction txn = datastore.beginTransaction();
+		try{
+			Key docKey = KeyFactory.stringToKey(doc.getKey());
+			Entity document = datastore.get(docKey);
+			if ((document.getProperty("LockedBy").equals(lockedBy))&&(isValid(lockedUntil))){
+				// Getting here means the document lock matches and hasn't expired
+				document.setProperty("LockedBy",null);
+				document.setProperty("Date", null);
+				datastore.put(txn, document);
+				txn.commit();
+			}else{
+				throw new LockExpired("Lock has expired");
+			}
+		}catch(EntityNotFoundException e){
+			/* This should never occur because LockedDocuments can only be created from the datastore and getting here means there
+			 * are no matching documents in the datastore. */
+		}finally{
+			if(txn.isActive()){
+				txn.rollback();
 			}
 		}
-		/* notInList is true only if the item is not found */
-		if (notInList){
-			throw new LockExpired("Document not locked");
+	}
+
+	/* Helper function: Checks if the key matches any documents in the system */	
+	public boolean isKeyPresent(String documentKey) {
+		for (int i=0; i<metadataList.size(); i++){
+			if (metadataList.get(i).getKey().equals(documentKey)){
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/* Helper function: Checks if lock is expired */
+	public boolean isValid(Date lockBy){
+		Date currentTime = new Date();
+		return currentTime.before(lockBy);
+	}
+	
+	/* Helper function: Updates metadata */
+	public void metaUpdate(String key, String newTitle){
+		for(int i=0; i<metadataList.size(); i++){
+			if (metadataList.get(i).getKey().equals(key)){
+					metadataList.get(i).title = newTitle;
+			}
 		}
 		return;
 	}
-
 }
+
