@@ -55,8 +55,6 @@ public class DocReader implements AsyncCallback<UnlockedDocument> {
 		collaborator.lockedDoc = null;
 		collaborator.title.setValue(result.getTitle());
 		collaborator.contents.setHTML(result.getContents());
-		collaborator.tabs.addTab(result.getTitle());
-		collaborator.tabs.selectTab(collaborator.tabs.getTabCount()-1);
 		collaborator.setDefaultButtons();
 		History.newItem(result.getKey());
 	}

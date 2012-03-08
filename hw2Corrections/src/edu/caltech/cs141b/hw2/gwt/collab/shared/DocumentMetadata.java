@@ -31,5 +31,10 @@ public class DocumentMetadata implements IsSerializable {
 		return title;
 	}
 	
+	/* Added to support title updates */
+	public void setTitle(String newTitle){
+		this.title = newTitle;
+	}
+	
 }
 

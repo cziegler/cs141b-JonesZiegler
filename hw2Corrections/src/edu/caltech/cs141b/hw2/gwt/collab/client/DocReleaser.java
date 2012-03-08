@@ -21,7 +21,6 @@ public class DocReleaser implements AsyncCallback<Void> {
 		collaborator.statusUpdate("Releasing lock on '" + lockedDoc.getTitle()
 				+ "'.");
 		collaborator.collabService.releaseLock(lockedDoc, this);
-		collaborator.tabs.removeTab(collaborator.tabIndex);
 	}
 
 	@Override

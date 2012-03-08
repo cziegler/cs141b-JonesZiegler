@@ -218,11 +218,12 @@ public class CollaboratorServiceImpl extends RemoteServiceServlet implements
 		return currentTime.before(lockBy);
 	}
 	
-	/* Helper function: Updates metadata */
+	/* Helper function: Updates metadata 
+	 * Note: This function required a small change to the DocumentMetadata shared implementation */
 	public void metaUpdate(String key, String newTitle){
 		for(int i=0; i<metadataList.size(); i++){
 			if (metadataList.get(i).getKey().equals(key)){
-					metadataList.get(i).title = newTitle;
+					metadataList.get(i).setTitle(newTitle);
 			}
 		}
 		return;

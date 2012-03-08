@@ -1,7 +1,7 @@
 package edu.caltech.cs141b.hw2.gwt.collab.client;
 
-//import com.google.gwt.event.dom.client.ChangeEvent;
-//import com.google.gwt.event.dom.client.ChangeHandler;
+import com.google.gwt.event.dom.client.ChangeEvent;
+import com.google.gwt.event.dom.client.ChangeHandler;
 import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.user.client.History;
@@ -14,7 +14,6 @@ import com.google.gwt.user.client.ui.ListBox;
 import com.google.gwt.user.client.ui.RichTextArea;
 import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.VerticalPanel;
-import com.google.gwt.user.client.ui.TabBar;
 
 import edu.caltech.cs141b.hw2.gwt.collab.shared.LockedDocument;
 import edu.caltech.cs141b.hw2.gwt.collab.shared.UnlockedDocument;
@@ -22,7 +21,7 @@ import edu.caltech.cs141b.hw2.gwt.collab.shared.UnlockedDocument;
 /**
  * Main class for a single Collaborator widget.
  */
-public class Collaborator extends Composite implements ClickHandler {
+public class Collaborator extends Composite implements ClickHandler, ChangeHandler {
 	
 	protected CollaboratorServiceAsync collabService;
 	
@@ -37,13 +36,10 @@ public class Collaborator extends Composite implements ClickHandler {
 	
 	// For displaying document information and editing document content.
 	protected TextBox title = new TextBox();
-	protected TabBar tabs = new TabBar();
-	protected int tabIndex = 0;
 	protected RichTextArea contents = new RichTextArea();
 	protected Button refreshDoc = new Button("Refresh Document");
-	protected Button lockButton = new Button("Edit Document");
+	protected Button lockButton = new Button("Get Document Lock");
 	protected Button saveButton = new Button("Save Document");
-	protected Button readButton = new Button("Read Document");
 	
 	// Callback objects.
 	protected DocLister lister = new DocLister(this);
@@ -77,8 +73,6 @@ public class Collaborator extends Composite implements ClickHandler {
 		hp.setSpacing(10);
 		hp.add(refreshList);
 		hp.add(createNew);
-		hp.add(readButton);
-		hp.add(lockButton);
 		vp.add(hp);
 		DecoratorPanel dp = new DecoratorPanel();
 		dp.setWidth("100%");
@@ -87,15 +81,15 @@ public class Collaborator extends Composite implements ClickHandler {
 		
 		vp = new VerticalPanel();
 		vp.setSpacing(10);
+		vp.add(new HTML("<h2>Selected Document</h2>"));
 		title.setWidth("100%");
-		tabs.setWidth("100%");
-		contents.setWidth("100%");
-		vp.add(tabs);
 		vp.add(title);
+		contents.setWidth("100%");
 		vp.add(contents);
 		hp = new HorizontalPanel();
 		hp.setSpacing(10);
 		hp.add(refreshDoc);
+		hp.add(lockButton);
 		hp.add(saveButton);
 		vp.add(hp);
 		dp = new DecoratorPanel();
@@ -119,9 +113,8 @@ public class Collaborator extends Composite implements ClickHandler {
 		refreshDoc.addClickHandler(this);
 		lockButton.addClickHandler(this);
 		saveButton.addClickHandler(this);
-		readButton.addClickHandler(this);
 		
-		//documentList.addChangeHandler(this);
+		documentList.addChangeHandler(this);
 		documentList.setVisibleItemCount(10);
 		
 		setDefaultButtons();
@@ -139,7 +132,6 @@ public class Collaborator extends Composite implements ClickHandler {
 	protected void setDefaultButtons() {
 		refreshDoc.setEnabled(true);
 		lockButton.setEnabled(true);
-		readButton.setEnabled(true);
 		saveButton.setEnabled(false);
 		title.setEnabled(false);
 		contents.setEnabled(false);
@@ -239,10 +231,6 @@ public class Collaborator extends Composite implements ClickHandler {
 					saver.saveDocument(lockedDoc);
 				}
 			}
-		} else if (event.getSource().equals(readButton)) {
-			String key = documentList.getValue(documentList.getSelectedIndex());
-			discardExisting(key);
-			reader.getDocument(key);
 		}
 	}
 
@@ -250,14 +238,14 @@ public class Collaborator extends Composite implements ClickHandler {
 	 * Intercepts events from the list box.
 	 * @see com.google.gwt.event.dom.client.ChangeHandler#onChange(com.google.gwt.event.dom.client.ChangeEvent)
 	 */
-	/*@Override
+	@Override
 	public void onChange(ChangeEvent event) {
 		if (event.getSource().equals(documentList)) {
 			String key = documentList.getValue(documentList.getSelectedIndex());
 			discardExisting(key);
 			reader.getDocument(key);
 		}
-	}*/
+	}
 	
 	/**
 	 * Used to release existing locks when the active document changes.
